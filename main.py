@@ -3,6 +3,7 @@ import pygame
 
 # pygame setup
 pygame.init()
+pygame.font.init()
 
 xwidth = 1280
 yheight = 720
@@ -227,6 +228,10 @@ while running:
         player.update(dt)
         player.draw(screen)
 
+    my_font = pygame.font.SysFont('Arial', 30)
+    text_surface1 = my_font.render('Arrows,Space', False, (0, 0, 0))
+    text_surface2 = my_font.render('W,A,D,Space', False, (0, 0, 0))
+
     # click, _, _ = pygame.mouse.get_pressed(3)
     keys = pygame.key.get_pressed()
     click = keys[pygame.K_SPACE]
@@ -253,6 +258,9 @@ while running:
                 player_id = abs(player_id-1)
     else:
         click_ready = True
+
+    screen.blit(text_surface2, (xmarg/3, yheight/5))
+    screen.blit(text_surface1, (xwidth-xmarg, 3*yheight/4))
 
     # flip() the display to put your work on screen
     pygame.display.flip()
