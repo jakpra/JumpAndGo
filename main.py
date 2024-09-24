@@ -162,6 +162,26 @@ class Player1(Player):
 players = [Player(), Player1()]
 
 
+class Group:
+    def __init__(self, stones):
+        self.stones = stones
+
+    @property
+    def liberties(self):
+        lib = set()
+        for stone in self.stones:
+            x, y = stone.xy
+            if i:=intersects2ids.get(((x-1), y)) in free_intersect_ids:
+                lib.add(i)
+            if i:=intersects2ids.get(((x+1), y)) in free_intersect_ids:
+                lib.add(i)
+            if i:=intersects2ids.get((x, (y-1))) in free_intersect_ids:
+                lib.add(i)
+            if i:=intersects2ids.get((x, (y+1))) in free_intersect_ids:
+                lib.add(i)
+        return len(lib)
+
+
 class Stone(pygame.sprite.Sprite):
     def __init__(self, xy, player):
         super().__init__()
@@ -169,6 +189,8 @@ class Stone(pygame.sprite.Sprite):
         self.player = player
         self.rect = pygame.rect.Rect((self.xy[0]-stone_size, self.xy[1]-stone_size),
                                      (1.5*stone_size, 2*stone_size))
+
+        self.group = Group()
 
     def draw(self, screen):
         pygame.draw.circle(screen, 'black', self.xy, stone_size + 0.1)
