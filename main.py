@@ -66,134 +66,100 @@ id2sprite = {}
 stone_sprites = pygame.sprite.Group()
 
 G_CONST = 9.81
-I_CONST = 0.8
+I_CONST = 0.5
 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, idx, start_pos, floor):
+    def __init__(self, idx=0, start_pos=id2intersects[len(intersects)-2],
+                 floor='bottom', stone_floor='top', gravity=1, color='red',
+                 keys=[pygame.K_UP, pygame.K_LEFT, pygame.K_RIGHT]):
         super().__init__()
         self.idx = idx
-        self.width = 4
+        self.width = 6
         self.height = 8
         self.xy = start_pos
         self.xvel = 0
         self.yvel = 0
-        self.floor = floor
+        self.home_floor = board.edges[floor]
+        self.cur_floor = self.home_floor
+        self.stone_floor = stone_floor
+        self.gravity = gravity
+        self.color = color
+
         self.jump_ready = True
         self.floating = True
 
-
-class Player0(Player):
-    def __init__(self):
-        super().__init__(0, id2intersects[len(intersects)-2], board.edges['bottom'])
         left = self.xy[0]-self.width/2
-        top = self.xy[1]-self.height
+        top = self.xy[1]-(self.height * max(0, self.gravity))
         self.rect = pygame.rect.Rect((left, top), (self.width, self.height))
+
+        self.keys = keys
 
     def update(self, dt):
         x, y = self.xy
-        if self.floor.get('y', y) != y:  # check if we are floating
-            if y > self.floor['y']:  # below floor
-                y = self.floor['y']
+
+        # fall
+        if self.cur_floor.get('y', y) != y:  # check if we are floating
+            if y * self.gravity > self.cur_floor['y'] * self.gravity:  # below floor
+                y = self.cur_floor['y']
                 self.yvel = 0
             else:
                 self.floating = True
-                self.yvel += 5  # if we are, move towards floor
+                self.yvel += G_CONST * self.gravity  # if we are, move towards floor
         else:
             self.floating = False
 
+        # inertia
         if not self.floating:
             self.xvel = self.xvel * I_CONST  # inertia
             if abs(self.xvel) < 0.1:  # clipping
                 self.xvel = 0
 
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_UP]:
+
+        # jump
+        if keys[self.keys[0]]:
             if self.jump_ready and not self.floating:
                 self.jump_ready = False
-                self.yvel -= 200
+                self.yvel -= 350 * self.gravity
         else:
             self.jump_ready = True
 
-        acc = 5 if self.floating else 50
-        if keys[pygame.K_LEFT]:
+        # walk
+        acc = 2 if self.floating else 50 if self.cur_floor != self.home_floor else 200
+        if keys[self.keys[1]]:
             self.xvel -= acc
-        if keys[pygame.K_RIGHT]:
+        if keys[self.keys[2]]:
             self.xvel += acc
 
+        # updating pos
         x += self.xvel * dt
         y += self.yvel * dt
         self.xy = pygame.math.Vector2(x, y)
 
-        who = pygame.sprite.spritecollideany(self, stone_sprites)
-        if who:
-            self.floor = {'y': who.rect.top}
+        # collision
+        coll = pygame.sprite.spritecollideany(self, stone_sprites)
+        if coll:
+            self.cur_floor = {'y': getattr(coll.rect, self.stone_floor)}
         else:
-            self.floor = board.edges['bottom']
+            self.cur_floor = self.home_floor
+
 
     def draw(self, screen):
         left = self.xy[0]-self.width/2
-        top = self.xy[1]-self.height
+        top = self.xy[1]-(self.height * max(0, self.gravity))
         self.rect = pygame.rect.Rect((left, top), (self.width, self.height))
-        pygame.draw.rect(screen, 'red', self.rect)
+        pygame.draw.rect(screen, self.color, self.rect)
 
 
 class Player1(Player):
     def __init__(self):
-        super().__init__(1, id2intersects[1], board.edges['top'])
-        left = self.xy[0]+self.width/2
-        top = self.xy[1]
-        self.rect = pygame.rect.Rect((left, top), (self.width, self.height))
-
-    def update(self, dt):
-        x, y = self.xy
-        if self.floor.get('y', y) != y:  # check if we are floating
-            if y < self.floor['y']:  # below floor
-                y = self.floor['y']
-                self.yvel = 0
-            else:
-                self.floating = True
-                self.yvel -= 5  # if we are, move towards floor
-        else:
-            self.floating = False
-
-        if not self.floating:
-            self.xvel = self.xvel * I_CONST  # inertia
-            if abs(self.xvel) < 0.1:  # clipping
-                self.xvel = 0
-
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_w]:
-            if self.jump_ready and not self.floating:
-                self.jump_ready = False
-                self.yvel += 200
-        else:
-            self.jump_ready = True
-
-        acc = 5 if self.floating else 50
-        if keys[pygame.K_a]:
-            self.xvel -= acc
-        if keys[pygame.K_d]:
-            self.xvel += acc
-
-        x += self.xvel * dt
-        y += self.yvel * dt
-        self.xy = pygame.math.Vector2(x, y)
-
-        who = pygame.sprite.spritecollideany(self, stone_sprites)
-        if who:
-            self.floor = {'y': who.rect.bottom}
-        else:
-            self.floor = board.edges['top']
-
-    def draw(self, screen):
-        left = self.xy[0]+self.width/2
-        top = self.xy[1]
-        self.rect = pygame.rect.Rect((left, top), (self.width, self.height))
-        pygame.draw.rect(screen, 'blue', self.rect)
+        super().__init__(idx=1, start_pos=id2intersects[1],
+                 floor='top', stone_floor='bottom', gravity=-1, color='blue',
+                 keys=[pygame.K_w, pygame.K_a, pygame.K_d])
 
 
-players = [Player0(), Player1()]
+players = [Player(), Player1()]
 
 
 class Stone(pygame.sprite.Sprite):
@@ -201,7 +167,6 @@ class Stone(pygame.sprite.Sprite):
         super().__init__()
         self.xy = xy
         self.player = player
-        self.radius = stone_size
         self.rect = pygame.rect.Rect((self.xy[0]-stone_size, self.xy[1]-stone_size),
                                      (1.5*stone_size, 2*stone_size))
 
