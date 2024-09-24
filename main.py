@@ -55,13 +55,25 @@ class Board:
 
 board = Board(board_size)
 intersects = board.intersects
-id2intersects = {i: v for i, v in enumerate(intersects)}
-intersects2ids = {tuple(v): i for i, v in enumerate(intersects)}
-free_intersect_ids = set(id2intersects.keys())
+id2intersects = {}
+intersects2id = {}
+id2grid = {}
+grid2id = {}
+for i, v in enumerate(intersects):
+    id2intersects[i] = v
+    intersects2id[tuple(v)] = i
+    grid_pos = (int((v[0]-xmarg) / sqlen * board.size)+1, int((v[1]-ymarg) / sqlen * board.size)+1)
+    id2grid[i] = grid_pos
+    grid2id[grid_pos] = i
+
+free_intersect_ids = set(id2grid.keys())
+
+print('id2intersects', id2intersects)
+print('id2grid', id2grid)
 
 click_ready = True
 
-stones = {0: [], 1: []}
+# stones = {0: [], 1: []}
 id2sprite = {}
 stone_sprites = pygame.sprite.Group()
 
@@ -70,7 +82,7 @@ I_CONST = 0.5
 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, idx=0, start_pos=id2intersects[len(intersects)-2],
+    def __init__(self, komi=0, idx=0, start_pos=id2intersects[len(intersects)-2],
                  floor='bottom', stone_floor='top', gravity=1, color='red',
                  keys=[pygame.K_UP, pygame.K_LEFT, pygame.K_RIGHT]):
         super().__init__()
@@ -95,17 +107,19 @@ class Player(pygame.sprite.Sprite):
 
         self.keys = keys
 
+        self.score = komi
+
     def update(self, dt):
         x, y = self.xy
 
         # fall
         if self.cur_floor.get('y', y) != y:  # check if we are floating
             if y * self.gravity > self.cur_floor['y'] * self.gravity:  # below floor
-                y = self.cur_floor['y']
                 self.yvel = 0
+                y = self.cur_floor['y']  # clip back  # TODO: currently instantly boosting to the top of any stone pile
             else:
                 self.floating = True
-                self.yvel += G_CONST * self.gravity  # if we are, move towards floor
+                self.yvel += G_CONST * self.gravity  # if we are floating above floor, move towards floor
         else:
             self.floating = False
 
@@ -154,7 +168,7 @@ class Player(pygame.sprite.Sprite):
 
 class Player1(Player):
     def __init__(self):
-        super().__init__(idx=1, start_pos=id2intersects[1],
+        super().__init__(komi=6.5, idx=1, start_pos=id2intersects[1],
                  floor='top', stone_floor='bottom', gravity=-1, color='blue',
                  keys=[pygame.K_w, pygame.K_a, pygame.K_d])
 
@@ -165,32 +179,63 @@ players = [Player(), Player1()]
 class Group:
     def __init__(self, stones):
         self.stones = stones
+        self.stone_ids = set(s.i for s in self.stones)
+        self._liberties = None
 
     @property
     def liberties(self):
         lib = set()
         for stone in self.stones:
-            x, y = stone.xy
-            if i:=intersects2ids.get(((x-1), y)) in free_intersect_ids:
-                lib.add(i)
-            if i:=intersects2ids.get(((x+1), y)) in free_intersect_ids:
-                lib.add(i)
-            if i:=intersects2ids.get((x, (y-1))) in free_intersect_ids:
-                lib.add(i)
-            if i:=intersects2ids.get((x, (y+1))) in free_intersect_ids:
-                lib.add(i)
-        return len(lib)
+            x, y = stone.grid
+            neighbors = [((x - 1), y), ((x + 1), y), (x, (y - 1)), (x, (y + 1))]
+            for n in neighbors:
+                if (i := grid2id.get(n)) in free_intersect_ids and i not in self.stone_ids:
+                    lib.add(i)
+        self._liberties = lib
+        return len(self._liberties)
 
 
 class Stone(pygame.sprite.Sprite):
-    def __init__(self, xy, player):
+    def __init__(self, placement_id, player):
         super().__init__()
-        self.xy = xy
+        self.i = placement_id
+        self.xy = id2intersects[placement_id]
+        self.grid = id2grid[placement_id]
         self.player = player
         self.rect = pygame.rect.Rect((self.xy[0]-stone_size, self.xy[1]-stone_size),
                                      (1.5*stone_size, 2*stone_size))
 
-        self.group = Group()
+        connected_stones = set()
+        captured_stones = set()
+        x, y = self.grid
+        neighbors = [((x - 1), y), ((x + 1), y), (x, (y - 1)), (x, (y + 1))]
+        for n in neighbors:
+            if (i := grid2id.get(n)) in id2sprite:
+                stone = id2sprite[i]
+                if stone.player == self.player:
+                    for s in stone.group.stones:
+                        connected_stones.add(s.i)
+                else:
+                    if stone.group.liberties <= 1:
+                        for s in stone.group.stones:
+                            captured_stones.add(s.i)
+
+        if captured_stones:
+            print(f'Captured {len(captured_stones)} stones!')
+            for s in captured_stones:
+                free_intersect_ids.add(s)
+                del id2sprite[s]
+                players[self.player].score += 1
+
+        self.group = Group([self] + [id2sprite[i] for i in connected_stones])
+        if self.group.liberties == 0:
+            print('Illegal move: self-capture.')
+            raise ValueError
+
+        for s in connected_stones:
+            id2sprite[s].group = self.group
+
+        print(f'Placed {player_colors[self.player]} stone. It belongs to a group with {len(self.group.stones)} stones {[s.i for s in self.group.stones]} and {self.group.liberties} liberties {list(self.group._liberties)}.')
 
     def draw(self, screen):
         pygame.draw.circle(screen, 'black', self.xy, stone_size + 0.1)
@@ -206,10 +251,9 @@ while running:
 
     board.draw(screen)
 
-    for p, s in stones.items():
-        for s_id in s:
-            sprite = id2sprite[s_id]
-            sprite.draw(screen)
+    for s_id in id2sprite:
+        sprite = id2sprite[s_id]
+        sprite.draw(screen)
 
     for player in players:
         player.update(dt)
@@ -219,32 +263,45 @@ while running:
     text_surface1 = my_font.render('Arrows,Space', False, (0, 0, 0))
     text_surface2 = my_font.render('W,A,D,Space', False, (0, 0, 0))
 
-    # click, _, _ = pygame.mouse.get_pressed(3)
+    click, _, _ = pygame.mouse.get_pressed(3)
     keys = pygame.key.get_pressed()
-    click = keys[pygame.K_SPACE]
+    space = keys[pygame.K_SPACE]
+    placement = False
     if click:
         if click_ready:
+            placement = True
             click_ready = False
-
-            # pos = pygame.math.Vector2(pygame.mouse.get_pos())
-            pos = players[player_id].xy
-            min_d = float('inf')
-            min_v = None
-            for v in intersects:
-                d = pos.distance_to(v)
-                if d < min_d:
-                    min_d = d
-                    min_v = v
-            placement = intersects2ids[tuple(min_v)]
-            if placement in free_intersect_ids:
-                free_intersect_ids.remove(placement)
-                stones[player_id].append(placement)
-                s = Stone(id2intersects[placement], player_id)
-                id2sprite[placement] = s
-                stone_sprites.add_internal(s)
-                player_id = abs(player_id-1)
+        pos = pygame.math.Vector2(pygame.mouse.get_pos())
+    elif space:
+        if click_ready:
+            placement = True
+            click_ready = False
+        pos = players[player_id].xy
     else:
         click_ready = True
+
+    if placement:
+        min_d = float('inf')
+        min_v = None
+        min_i = None
+        for i in free_intersect_ids:  # find intersection closest to player position
+            v = id2intersects[i]
+            d = pos.distance_to(v)
+            if d < min_d:
+                min_d = d
+                min_v = v
+                min_i = i
+        if min_i in free_intersect_ids:
+            try:
+                s = Stone(min_i, player_id)
+            except ValueError:
+                pass
+            else:
+                free_intersect_ids.remove(min_i)
+                # stones[player_id].append(min_i)
+                id2sprite[min_i] = s
+                stone_sprites.add_internal(s)
+                player_id = abs(player_id-1)
 
     screen.blit(text_surface2, (xmarg/3, yheight/5))
     screen.blit(text_surface1, (xwidth-xmarg, 3*yheight/4))
