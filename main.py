@@ -74,7 +74,8 @@ print('id2grid', id2grid)
 
 click_ready = True
 
-# stones = {0: [], 1: []}
+prev_stones = None
+stones = {0: frozenset(), 1: frozenset()}
 id2sprite = {}
 stone_sprites = pygame.sprite.Group()
 
@@ -185,12 +186,12 @@ class Player(pygame.sprite.Sprite):
             if self.rotated:
                 self.yvel += acc * self.gravity
             else:
-                self.xvel -= acc
+                self.xvel -= acc * self.gravity
         if keys[self.keys[2]]:
             if self.rotated:
                 self.yvel -= acc * self.gravity
             else:
-                self.xvel += acc
+                self.xvel += acc * self.gravity
 
         # updating pos
         self.xy_dict['x'] += self.xvel * dt
@@ -214,14 +215,17 @@ class Player(pygame.sprite.Sprite):
 class Player1(Player):
     def __init__(self):
         super().__init__(komi=6.5, idx=1,
-                 floor='top', stone_floor='bottom', gravity=-1, color='blue',
-                 keys=[pygame.K_w, pygame.K_a, pygame.K_d, pygame.K_s])
+                 floor='left', stone_floor='right', gravity=-1, color='blue',
+                 keys=[pygame.K_s, pygame.K_q, pygame.K_y, pygame.K_a])
+
+        self.rotated = True
+        self.floor_axis = 'x'
 
 
 players = [Player(), Player1()]
 
 
-class Group:
+class Group:  # TODO: idea: groups project influence/strength, opposing strength can also cancel each other out
     def __init__(self, stones):
         self.stones = stones
         self.stone_ids = set(s.i for s in self.stones)
@@ -265,12 +269,25 @@ class Stone(pygame.sprite.Sprite):
                         for s in stone.group.stones:
                             captured_stones.add(s.i)
 
+        self.new_stones = {self.player: stones[self.player] | frozenset([self.i])}
+
+        other_player = abs(self.player - 1)
+
         if captured_stones:
+            self.new_stones[other_player] = stones[other_player] - frozenset(captured_stones)
+
+            if self.new_stones == prev_stones:
+                print('Illegal move: Ko.')
+                raise ValueError
+
             print(f'Captured {len(captured_stones)} stones!')
             for s in captured_stones:
                 free_intersect_ids.add(s)
-                del id2sprite[s]
+                sprite = id2sprite.pop(s)
+                stone_sprites.remove_internal(sprite)
                 players[self.player].score += 1
+        else:
+            self.new_stones[other_player] = stones[other_player]
 
         self.group = Group([self] + [id2sprite[i] for i in connected_stones])
         if self.group.liberties == 0:
@@ -308,7 +325,7 @@ while running:
     player0_score_text = my_font.render(f'Score: {players[0].score}', True, (0, 0, 0))
     player0_ctrl_text = my_font.render('Arrows,Space', True, (0, 0, 0))
     player1_score_text = my_font.render(f'Score: {players[1].score}', True, (0, 0, 0))
-    player1_ctrl_text = my_font.render('WASD,Space', True, (0, 0, 0))
+    player1_ctrl_text = my_font.render('SQAY,Space', True, (0, 0, 0))
 
     click, _, _ = pygame.mouse.get_pressed(3)
     keys = pygame.key.get_pressed()
@@ -327,7 +344,8 @@ while running:
     else:
         click_ready = True
 
-    if placement:
+    if placement:  # TODO: idea: can aim and place stones not only at current position but also anywhere in the influence of the group we are currently standing on
+                   # TODO: OR - can still only place at current position, but when inside stone influence, we can move around more freely/floaty and more precisely
         min_d = float('inf')
         min_v = None
         min_i = None
@@ -345,7 +363,7 @@ while running:
                 pass
             else:
                 free_intersect_ids.remove(min_i)
-                # stones[player_id].append(min_i)
+                prev_stones, stones = stones, s.new_stones
                 id2sprite[min_i] = s
                 stone_sprites.add_internal(s)
                 player_id = abs(player_id-1)
