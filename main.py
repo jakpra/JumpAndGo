@@ -84,22 +84,28 @@ I_CONST = 0.5
 class Player(pygame.sprite.Sprite):
     def __init__(self, komi=0, idx=0, start_pos=id2intersects[len(intersects)-2],
                  floor='bottom', stone_floor='top', gravity=1, color='red',
-                 keys=[pygame.K_UP, pygame.K_LEFT, pygame.K_RIGHT]):
+                 keys=[pygame.K_UP, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_DOWN]):
         super().__init__()
         self.idx = idx
         self.width = 6
         self.height = 8
         self.xy = start_pos
+        self.xy_dict = {'x': start_pos[0], 'y': start_pos[1]}
         self.xvel = 0
         self.yvel = 0
         self.home_floor = board.edges[floor]
         self.cur_floor = self.home_floor
         self.stone_floor = stone_floor
         self.gravity = gravity
+        self.floor_axis = 'y'
+
         self.color = color
 
         self.jump_ready = True
+        self.rotate_ready = True
         self.floating = True
+        self.rotated = False
+        # self.rotations = [0, 1, 2, 3]  # cycle through
 
         left = self.xy[0]-self.width/2
         top = self.xy[1]-(self.height * max(0, self.gravity))
@@ -110,13 +116,13 @@ class Player(pygame.sprite.Sprite):
         self.score = komi
 
     def update(self, dt):
-        x, y = self.xy
 
         # fall
-        if self.cur_floor.get('y', y) != y:  # check if we are floating
-            if y * self.gravity > self.cur_floor['y'] * self.gravity:  # below floor
+        floor_axis = self.xy_dict[self.floor_axis]
+        if self.cur_floor.get(self.floor_axis, floor_axis) != floor_axis:  # check if we are floating
+            if floor_axis * self.gravity > self.cur_floor[self.floor_axis] * self.gravity:  # below floor
                 self.yvel = 0
-                y = self.cur_floor['y']  # clip back  # TODO: currently instantly boosting to the top of any stone pile
+                self.xy_dict[self.floor_axis] = self.cur_floor[self.floor_axis]  # clip back  # TODO: currently instantly boosting to the top of any stone pile
             else:
                 self.floating = True
                 self.yvel += G_CONST * self.gravity  # if we are floating above floor, move towards floor
@@ -130,6 +136,25 @@ class Player(pygame.sprite.Sprite):
                 self.xvel = 0
 
         keys = pygame.key.get_pressed()
+
+        # rotate
+        if keys[self.keys[3]]:
+            if self.rotate_ready:
+                if self.rotated:
+                    self.rotate_ready = False
+                    self.rotated = False
+                    self.floor_axis = 'y'
+                    self.cur_floor = self.home_floor
+                    self.stone_floor = 'right' if self.gravity > 0 else 'left'
+                else:
+                    self.rotate_ready = False
+                    self.rotated = True
+                    self.floor_axis = 'x'
+                    self.cur_floor = board.edges['right' if self.gravity > 0 else 'left']
+                    self.stone_floor = 'left' if self.gravity > 0 else 'right'
+                self.floating = True
+        else:
+            self.rotate_ready = True
 
         # jump
         if keys[self.keys[0]]:
@@ -147,9 +172,13 @@ class Player(pygame.sprite.Sprite):
             self.xvel += acc
 
         # updating pos
-        x += self.xvel * dt
-        y += self.yvel * dt
-        self.xy = pygame.math.Vector2(x, y)
+        if self.rotated:
+            self.xy_dict['x'] += self.yvel * dt
+            self.xy_dict['y'] += self.xvel * dt
+        else:
+            self.xy_dict['x'] += self.xvel * dt
+            self.xy_dict['y'] += self.yvel * dt
+        self.xy = pygame.math.Vector2(self.xy_dict['x'], self.xy_dict['y'])
 
         # collision
         coll = pygame.sprite.spritecollideany(self, stone_sprites)
@@ -157,7 +186,6 @@ class Player(pygame.sprite.Sprite):
             self.cur_floor = {'y': getattr(coll.rect, self.stone_floor)}
         else:
             self.cur_floor = self.home_floor
-
 
     def draw(self, screen):
         left = self.xy[0]-self.width/2
@@ -170,7 +198,7 @@ class Player1(Player):
     def __init__(self):
         super().__init__(komi=6.5, idx=1, start_pos=id2intersects[1],
                  floor='top', stone_floor='bottom', gravity=-1, color='blue',
-                 keys=[pygame.K_w, pygame.K_a, pygame.K_d])
+                 keys=[pygame.K_w, pygame.K_a, pygame.K_d, pygame.K_s])
 
 
 players = [Player(), Player1()]
@@ -189,7 +217,7 @@ class Group:
             x, y = stone.grid
             neighbors = [((x - 1), y), ((x + 1), y), (x, (y - 1)), (x, (y + 1))]
             for n in neighbors:
-                if (i := grid2id.get(n)) in free_intersect_ids and i not in self.stone_ids:
+                if (i := grid2id.get(n)) in free_intersect_ids and i not in self.stone_ids:  # TODO: is the stone_ids check necessary?
                     lib.add(i)
         self._liberties = lib
         return len(self._liberties)
@@ -233,7 +261,7 @@ class Stone(pygame.sprite.Sprite):
             raise ValueError
 
         for s in connected_stones:
-            id2sprite[s].group = self.group
+            id2sprite[s].group = self.group  # TODO: sanity check garbage collector: how many unused/old groups are kept around?
 
         print(f'Placed {player_colors[self.player]} stone. It belongs to a group with {len(self.group.stones)} stones {[s.i for s in self.group.stones]} and {self.group.liberties} liberties {list(self.group._liberties)}.')
 
@@ -260,8 +288,10 @@ while running:
         player.draw(screen)
 
     my_font = pygame.font.SysFont('Arial', 30)
-    text_surface1 = my_font.render('Arrows,Space', False, (0, 0, 0))
-    text_surface2 = my_font.render('W,A,D,Space', False, (0, 0, 0))
+    player0_score_text = my_font.render(f'Score: {players[0].score}', True, (0, 0, 0))
+    player0_ctrl_text = my_font.render('Arrows,Space', True, (0, 0, 0))
+    player1_score_text = my_font.render(f'Score: {players[1].score}', True, (0, 0, 0))
+    player1_ctrl_text = my_font.render('W,A,D,Space', True, (0, 0, 0))
 
     click, _, _ = pygame.mouse.get_pressed(3)
     keys = pygame.key.get_pressed()
@@ -303,8 +333,10 @@ while running:
                 stone_sprites.add_internal(s)
                 player_id = abs(player_id-1)
 
-    screen.blit(text_surface2, (xmarg/3, yheight/5))
-    screen.blit(text_surface1, (xwidth-xmarg, 3*yheight/4))
+    screen.blit(player1_score_text, (xmarg/3, yheight/5))
+    screen.blit(player1_ctrl_text, (xmarg/3, yheight/5+30))
+    screen.blit(player0_score_text, (xwidth-xmarg, 3*yheight/4))
+    screen.blit(player0_ctrl_text, (xwidth-xmarg, 3*yheight/4+30))
 
     # flip() the display to put your work on screen
     pygame.display.flip()
