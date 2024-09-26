@@ -66,8 +66,8 @@ class Board:
                 _inv = 255-_infl  # ((2*255)-_infl)//2
                 color = (255 if infl<0 else _inv, _inv, 255 if infl>0 else _inv)
                 screen.fill(color,
-                            pygame.rect.Rect((id2intersects[i][0]-stone_size, id2intersects[i][1]-stone_size),
-                                             (2*stone_size, 2*stone_size)))
+                            pygame.rect.Rect((id2intersects[i][0]-stone_size*1.05, id2intersects[i][1]-stone_size*1.05),
+                                             (2.1*stone_size, 2.1*stone_size)))  # +0.05/0.1 to get rid of white lines
 
         for i in range(self.size):
             pygame.draw.line(screen, 'black',
@@ -243,7 +243,7 @@ class Player1(Player):
 players = [Player(), Player1()]
 
 
-class Group:  # TODO: idea: groups project influence/strength, opposing strength can also cancel each other out
+class Group:
     def __init__(self, stones):
         self.stones = stones
         self.stone_ids = set(s.i for s in self.stones)
