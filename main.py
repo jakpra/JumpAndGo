@@ -1,5 +1,7 @@
-# Example file showing a circle moving on screen
+from collections import defaultdict
+
 import pygame
+import pygame.gfxdraw
 
 # pygame setup
 pygame.init()
@@ -37,35 +39,51 @@ class Board:
                 self.intersects.append(pygame.math.Vector2(xmarg + (i / size) * sqlen,
                                                            ymarg + (j / size) * sqlen))
 
+        self.id2intersects = {}
+        self.intersects2id = {}
+        self.id2grid = {}
+        self.grid2id = defaultdict(lambda: -1)
+        for i, v in enumerate(self.intersects):
+            self.id2intersects[i] = v
+            self.intersects2id[tuple(v)] = i
+            grid_pos = (int((v[0] - xmarg) / sqlen * size) + 1, int((v[1] - ymarg) / sqlen * size) + 1)
+            self.id2grid[i] = grid_pos
+            self.grid2id[grid_pos] = i
+
         self.edges = {'top':    {'y': ymarg},
                       'right':  {'x': xwidth - xmarg - (sqlen / self.size)},
                       'bottom': {'y': yheight - ymarg - (sqlen / self.size)},
                       'left':   {'x': xmarg}}
 
+        self.id2influence = defaultdict(float)
+
     def draw(self, screen):
         screen.fill('white')
 
+        for i, infl in self.id2influence.items():
+            if i in id2intersects:
+                _infl = min(255, max(0, abs(255*infl)))
+                _inv = 255-_infl  # ((2*255)-_infl)//2
+                color = (255 if infl<0 else _inv, _inv, 255 if infl>0 else _inv)
+                screen.fill(color,
+                            pygame.rect.Rect((id2intersects[i][0]-stone_size, id2intersects[i][1]-stone_size),
+                                             (2*stone_size, 2*stone_size)))
+
         for i in range(self.size):
-            pygame.draw.line(screen, 'gray',
+            pygame.draw.line(screen, 'black',
                              (xmarg, (ymarg + (i / self.size) * sqlen)),
                              (xwidth - xmarg - (sqlen / self.size), (ymarg + (i / self.size) * sqlen)))
-            pygame.draw.line(screen, 'gray',
+            pygame.draw.line(screen, 'black',
                              ((xmarg + (i / self.size) * sqlen), ymarg),
                              ((xmarg + (i / self.size) * sqlen), yheight - ymarg - (sqlen / self.size)))
 
-
 board = Board(board_size)
 intersects = board.intersects
-id2intersects = {}
-intersects2id = {}
-id2grid = {}
-grid2id = {}
-for i, v in enumerate(intersects):
-    id2intersects[i] = v
-    intersects2id[tuple(v)] = i
-    grid_pos = (int((v[0]-xmarg) / sqlen * board.size)+1, int((v[1]-ymarg) / sqlen * board.size)+1)
-    id2grid[i] = grid_pos
-    grid2id[grid_pos] = i
+id2intersects = board.id2intersects
+intersects2id = board.intersects2id
+id2grid = board.id2grid
+grid2id = board.grid2id
+id2influence = board.id2influence
 
 free_intersect_ids = set(id2grid.keys())
 
@@ -366,6 +384,37 @@ while running:
                 prev_stones, stones = stones, s.new_stones
                 id2sprite[min_i] = s
                 stone_sprites.add_internal(s)
+
+                x, y = id2grid[s.i]
+                _x, _y = x, y-1
+                m = 1  # resolution  # TODO: for m != 1, id2influence needs to be replaced with pxlCoord2influence
+                n = m  # spiral edge length
+                strength = player_id-0.5
+                id2influence[s.i] += 2*strength
+                while abs(strength) > 0.01:
+                    # fib1, fib2 = fib2, fib1+fib2
+                    for _ in range(n//m):
+                        id2influence[grid2id[_x, _y]] += strength
+                        _x += m  # right
+                    # fib1, fib2 = fib2, fib1+fib2
+                    n += m
+
+                    for _ in range(n//m):
+                        id2influence[grid2id[_x, _y]] += strength
+                        _y += m  # down
+                    # fib1, fib2 = fib2, fib1+fib2
+                    for _ in range(n//m):
+                        id2influence[grid2id[_x, _y]] += strength
+                        _x -= m  # left
+                    # fib1, fib2 = fib2, fib1+fib2
+                    n += m
+
+                    for _ in range(n//m):
+                        id2influence[grid2id[_x, _y]] += strength
+                        _y -= m  # up
+
+                    strength /= 2
+
                 player_id = abs(player_id-1)
 
     screen.blit(player1_score_text, (xmarg/3, yheight/5))
