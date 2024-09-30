@@ -63,7 +63,7 @@ class Board:
         for i, infl in self.id2influence.items():
             if i in id2intersects:
                 _infl = min(255, max(0, abs(255*infl)))
-                _inv = 255-_infl  # ((2*255)-_infl)//2
+                _inv = ((2*255)-_infl)//2
                 color = (255 if infl<0 else _inv, _inv, 255 if infl>0 else _inv)
                 screen.fill(color,
                             pygame.rect.Rect((id2intersects[i][0]-stone_size*1.05, id2intersects[i][1]-stone_size*1.05),
@@ -299,11 +299,15 @@ class Stone(pygame.sprite.Sprite):
                 raise ValueError
 
             print(f'Captured {len(captured_stones)} stones!')
-            for s in captured_stones:
-                free_intersect_ids.add(s)
-                sprite = id2sprite.pop(s)
+            for s_id in captured_stones:
+                free_intersect_ids.add(s_id)
+                sprite = id2sprite.pop(s_id)
                 stone_sprites.remove_internal(sprite)
+
+                add_influence(s_id, player_id)
+
                 players[self.player].score += 1
+
         else:
             self.new_stones[other_player] = stones[other_player]
 
@@ -320,6 +324,38 @@ class Stone(pygame.sprite.Sprite):
     def draw(self, screen):
         pygame.draw.circle(screen, 'black', self.xy, stone_size + 0.1)
         pygame.draw.circle(screen, player_colors[self.player], self.xy, stone_size - 1)
+
+
+def add_influence(grid_id, player_id, threshold=0.01):
+    x, y = id2grid[grid_id]
+    _x, _y = x, y - 1
+    m = 1  # resolution  # TODO: for m != 1, id2influence needs to be replaced with pxlCoord2influence
+    n = m  # spiral edge length
+    strength = player_id - 0.5
+    id2influence[grid_id] += 2 * strength
+    while abs(strength) > threshold:
+        # fib1, fib2 = fib2, fib1+fib2
+        for _ in range(n // m):
+            id2influence[grid2id[_x, _y]] += strength / (min(abs(_x - x), abs(_y - y)) + 1)
+            _x += m  # right
+        # fib1, fib2 = fib2, fib1+fib2
+        n += m
+
+        for _ in range(n // m):
+            id2influence[grid2id[_x, _y]] += strength / (min(abs(_x - x), abs(_y - y)) + 1)
+            _y += m  # down
+        # fib1, fib2 = fib2, fib1+fib2
+        for _ in range(n // m):
+            id2influence[grid2id[_x, _y]] += strength / (min(abs(_x - x), abs(_y - y)) + 1)
+            _x -= m  # left
+        # fib1, fib2 = fib2, fib1+fib2
+        n += m
+
+        for _ in range(n // m):
+            id2influence[grid2id[_x, _y]] += strength / (min(abs(_x - x), abs(_y - y)) + 1)
+            _y -= m  # up
+
+        strength /= 2
 
 
 while running:
@@ -385,35 +421,7 @@ while running:
                 id2sprite[min_i] = s
                 stone_sprites.add_internal(s)
 
-                x, y = id2grid[s.i]
-                _x, _y = x, y-1
-                m = 1  # resolution  # TODO: for m != 1, id2influence needs to be replaced with pxlCoord2influence
-                n = m  # spiral edge length
-                strength = player_id-0.5
-                id2influence[s.i] += 2*strength
-                while abs(strength) > 0.01:
-                    # fib1, fib2 = fib2, fib1+fib2
-                    for _ in range(n//m):
-                        id2influence[grid2id[_x, _y]] += strength
-                        _x += m  # right
-                    # fib1, fib2 = fib2, fib1+fib2
-                    n += m
-
-                    for _ in range(n//m):
-                        id2influence[grid2id[_x, _y]] += strength
-                        _y += m  # down
-                    # fib1, fib2 = fib2, fib1+fib2
-                    for _ in range(n//m):
-                        id2influence[grid2id[_x, _y]] += strength
-                        _x -= m  # left
-                    # fib1, fib2 = fib2, fib1+fib2
-                    n += m
-
-                    for _ in range(n//m):
-                        id2influence[grid2id[_x, _y]] += strength
-                        _y -= m  # up
-
-                    strength /= 2
+                add_influence(s.i, player_id)
 
                 player_id = abs(player_id-1)
 
