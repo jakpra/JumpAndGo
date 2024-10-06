@@ -57,6 +57,12 @@ class Board:
 
         self.id2influence = defaultdict(float)
 
+        self.starpoints = []
+        if self.size == 19:
+            self.starpoints = [self.grid2id[(4,4)], self.grid2id[(16,16)], self.grid2id[(4,16)], self.grid2id[(16,4)],
+                               self.grid2id[(10,4)], self.grid2id[(4,10)], self.grid2id[(10,16)], self.grid2id[(16,10)],
+                               self.grid2id[(10,10)]]
+
     def draw(self, screen):
         screen.fill('white')
 
@@ -76,6 +82,12 @@ class Board:
             pygame.draw.line(screen, 'black',
                              ((xmarg + (i / self.size) * sqlen), ymarg),
                              ((xmarg + (i / self.size) * sqlen), yheight - ymarg - (sqlen / self.size)))
+
+        for i in self.starpoints:
+            pygame.draw.circle(screen, 'black',
+                               center=self.id2intersects[i], radius=4)
+
+
 
 board = Board(board_size)
 intersects = board.intersects
@@ -389,7 +401,7 @@ while running:
         if click_ready:
             placement = True
             click_ready = False
-        pos = pygame.math.Vector2(pygame.mouse.get_pos())
+        pos = pygame.math.Vector2(pygame.mouse.get_pos())  # TODO: mark last placed stone and/or show transparent hover stone
     elif space:
         if click_ready:
             placement = True
